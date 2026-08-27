@@ -1,0 +1,129 @@
+name: Build Touché!Convert (Windows / macOS / Linux)
+
+# Si avvia automaticamente:
+#  - ad ogni push sul branch main/master (produce artifact scaricabili
+#    dalla scheda Actions, validi 90 giorni)
+#  - quando crei un tag "v*" (es. v1.0.0): allega gli eseguibili anche
+#    a una Release scaricabile in modo permanente
+#  - manualmente dalla scheda Actions ("Run workflow")
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            piattaforma: windows
+          - os: macos-latest
+            piattaforma: macos
+          - os: ubuntu-latest
+            piattaforma: linux
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Imposta Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installa le dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Tk/Tcl serve solo su Linux: sui runner Windows/macOS ospitati da
+      # GitHub è già incluso nel Python ufficiale installato sopra.
+      - name: Installa Tkinter (solo Linux)
+        if: matrix.piattaforma == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
+      # --add-data usa separatori diversi fra Windows (;) e macOS/Linux (:)
+      - name: Compila (Windows)
+        if: matrix.piattaforma == 'windows'
+        run: >
+          pyinstaller --noconfirm --onefile --windowed
+          --name "Touché!Convert"
+          --icon assets/icon.ico
+          --add-data "assets;assets"
+          gui.py
+
+      - name: Compila (macOS)
+        if: matrix.piattaforma == 'macos'
+        run: >
+          pyinstaller --noconfirm --windowed
+          --name "Touché!Convert"
+          --icon assets/icon.icns
+          --add-data "assets:assets"
+          --osx-bundle-identifier com.toucheconvert.app
+          gui.py
+
+      - name: Compila (Linux)
+        if: matrix.piattaforma == 'linux'
+        run: >
+          pyinstaller --noconfirm --onefile --windowed
+          --name "ToucheConvert"
+          --add-data "assets:assets"
+          gui.py
+
+      - name: Comprimi il bundle .app (solo macOS)
+        if: matrix.piattaforma == 'macos'
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "Touché!Convert.app" "Touche-Convert-macOS.zip"
+
+      - name: Carica artifact (Windows)
+        if: matrix.piattaforma == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Touche-Convert-Windows
+          path: dist/Touché!Convert.exe
+
+      - name: Carica artifact (macOS)
+        if: matrix.piattaforma == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Touche-Convert-macOS
+          path: dist/Touche-Convert-macOS.zip
+
+      - name: Carica artifact (Linux)
+        if: matrix.piattaforma == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Touche-Convert-Linux
+          path: dist/ToucheConvert
+
+      # Se il push è di un tag "v*", allega gli eseguibili anche a una Release
+      - name: Crea/aggiorna Release (solo per i tag v*, Windows)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.piattaforma == 'windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Touché!Convert.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Crea/aggiorna Release (solo per i tag v*, macOS)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.piattaforma == 'macos'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Touche-Convert-macOS.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Crea/aggiorna Release (solo per i tag v*, Linux)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.piattaforma == 'linux'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ToucheConvert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
