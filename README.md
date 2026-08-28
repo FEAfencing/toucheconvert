@@ -1,108 +1,131 @@
 # Touché!Convert
 
-Applicazione con interfaccia grafica per convertire i file nei **due
-sensi**:
+Applicazione con interfaccia grafica per convertire i risultati di gara
+di scherma fra tre formati:
 
-- **JSON (touche-export) → XML (FIE)** — genera il file di
-  pubblicazione risultati ufficiale a partire dall'esportazione
-  gestionale.
-- **XML (FIE) → JSON (touche-export)** — ricostruisce un file
-  touche-export a partire da un XML FIE (conversione "best effort":
-  l'XML FIE non contiene tutti i dati gestionali originali, vedi i
-  limiti descritti in cima a `fie2touche.py`).
+- **touche-export** (JSON) — l'esportazione gestionale completa
+- **FIE XML** (`CompetitionIndividuelle`) — il formato di pubblicazione
+  risultati internazionale
+- **FisDotNet XML** (`dsLoadSave`, es. file "ExpAllGara_*.XML") — il
+  formato del software federale italiano
 
-Non serve installare Python: grazie a GitHub Actions, ogni volta che
-carichi il codice su GitHub vengono generati automaticamente gli
-eseguibili pronti per **Windows**, **macOS** e **Linux**.
+## Le sei schede dell'applicazione
+
+1. **JSON → FIE** — da un evento/gara touche-export a uno o più file
+   FIE XML (uno per ciascuna gara contenuta, se l'evento ne ha più di
+   una: stessa arma/genere/categoria diversi = file diversi).
+2. **FIE → JSON** — da un file FIE XML a un touche-export di singola
+   gara (conversione "best effort": l'XML FIE non contiene tutti i
+   dati gestionali originali, vedi i limiti in cima a `fie2touche.py`).
+3. **FisDotNet → JSON** — da un intero evento FisDotNet (anche con più
+   armi/generi/categorie nello stesso file) a un touche-export con più
+   gare. **Il torneo FisDotNet diventa il "circuito" del touche-export;
+   se il torneo è assente, si usa il titolo dell'evento** (regola
+   richiesta esplicitamente).
+4. **JSON → FisDotNet** — conversione inversa, verso il formato
+   federale.
+5. **FisDotNet → FIE (tutte le gare)** — scorciatoia che incatena le
+   conversioni 3 e 1: da un evento FisDotNet produce direttamente un
+   file FIE per ciascuna gara contenuta.
+6. **Componi evento** — prende più file touche-export di **singola
+   gara** (uno per arma/genere/categoria) e li unisce in un unico
+   evento con più gare, pronto per essere esportato in FIE o in
+   FisDotNet.
+
+## Un punto importante sul formato FisDotNet
+
+Nel formato FisDotNet gli **"Incontri"** sono scontri **a squadre**
+(un incontro = il punteggio complessivo fra due squadre), mentre gli
+**"Assalti"** sono i singoli scontri **individuali** (anche quando
+avvengono all'interno di un incontro a squadre). Il convertitore non
+usa **mai** la tabella "Incontri" per ricostruire gli assalti di una
+gara individuale — sarebbe un errore concettuale, dato che i due dati
+vivono a livelli diversi. Le gare a squadre vengono riconosciute come
+tali ma non ricostruite in dettaglio (formazioni, sostituzioni): è un
+limite dichiarato, non un'approssimazione silenziosa.
+
+Tutte le convenzioni dedotte dal formato FisDotNet (mappatura arma/
+genere, codici categoria d'età, ecc. — non essendo disponibile una
+documentazione ufficiale consultabile) sono descritte in dettaglio
+nella testata di `fisdotnet.py`, insieme all'elenco completo dei
+limiti noti della conversione.
 
 ## Contenuto del pacchetto
 
 ```
-touche2fie.py                -> logica di conversione JSON -> XML
-fie2touche.py                -> logica di conversione XML -> JSON
+touche2fie.py                -> logica di conversione JSON touche -> XML FIE
+fie2touche.py                -> logica di conversione XML FIE -> JSON touche
+fisdotnet.py                 -> logica di conversione FisDotNet <-> touche
+                                 (e scorciatoia FisDotNet -> FIE, e la
+                                 composizione di più gare in un evento)
 gui.py                       -> interfaccia grafica "Touché!Convert" (punto di ingresso)
 requirements.txt             -> dipendenze per la build (solo PyInstaller)
 assets/
-  icon.ico                   -> icona per l'eseguibile Windows
-  icon.icns                  -> icona per l'app macOS
-  icon_256.png / icon_512.png-> icona per Linux e per la finestra dell'app
+  icon.ico / icon.icns / icon_256.png / icon_512.png -> icone app
   fie_watermark.png          -> logo FIE con sfondo rimosso, usato come
-                                 filigrana nell'intestazione dell'interfaccia
-.github/workflows/build.yml  -> istruzioni per GitHub Actions (build automatica)
+                                 filigrana nell'intestazione
+  dsLoadSave_schema_template.xml -> intestazione/schema XML fisso del
+                                 formato FisDotNet, riusato tale e quale
+                                 per generare file compatibili
+.github/workflows/build.yml  -> build automatica per Windows/macOS/Linux
 ```
 
 ## Come ottenere gli eseguibili (nessuna installazione richiesta)
 
-### 1. Crea un repository su GitHub
-Vai su github.com, crea un account se non ne hai uno, poi crea un
-nuovo repository (es. `touche-convert`), anche privato va bene.
+### 1. Crea un repository su GitHub e carica questi file
+Dal browser, senza riga di comando: apri il repository -> "Add file"
+-> "Upload files" -> trascina dentro **tutti** i file/cartelle di
+questo pacchetto, **mantenendo la struttura** (`.github/workflows/` e
+`assets/` incluse) -> "Commit changes".
 
-### 2. Carica questi file
-Dal browser, senza riga di comando:
-- apri il repository -> "Add file" -> "Upload files"
-- trascina dentro **tutti** i file/cartelle di questo pacchetto,
-  **mantenendo la struttura** (in particolare `.github/workflows/` e
-  `assets/`)
-- conferma il commit ("Commit changes")
+### 2. Attendi la compilazione automatica
+Scheda **Actions**: dopo 2-5 minuti trovi tre **Artifacts**:
+- `Touche-Convert-Windows` → `Touché!Convert.exe`
+- `Touche-Convert-macOS` → `Touche-Convert-macOS.zip` (contiene
+  `Touché!Convert.app`)
+- `Touche-Convert-Linux` → eseguibile `ToucheConvert`
 
-### 3. Attendi la compilazione automatica
-- vai nella scheda **Actions**: vedrai il workflow "Build
-  Touché!Convert (Windows / macOS / Linux)" già in esecuzione
-  (di solito 2-5 minuti per tutte e tre le piattaforme)
-- quando è completato, aprilo e in fondo trovi tre **Artifacts**:
-  - `Touche-Convert-Windows` → contiene `Touché!Convert.exe`
-  - `Touche-Convert-macOS` → contiene `Touche-Convert-macOS.zip`
-    (dentro c'è l'app `Touché!Convert.app`)
-  - `Touche-Convert-Linux` → contiene l'eseguibile `ToucheConvert`
+### 3. (Opzionale) Versione permanente
+Scheda **Releases** -> "Draft a new release" -> Tag `v1.0.0` ->
+Publish: il workflow allega automaticamente i tre eseguibili.
 
-### 4. (Opzionale) Creare una versione "ufficiale" sempre scaricabile
-Gli artifact scadono dopo 90 giorni. Per un link permanente:
-- scheda **Releases** -> "Draft a new release" -> Tag `v1.0.0` ->
-  Publish
-- il workflow si riattiva e allega automaticamente i tre eseguibili
-  alla Release
+## Come usare l'app
 
-## Come usare l'app una volta scaricata
+**Windows**: doppio clic su `Touché!Convert.exe` (SmartScreen può
+avvisare per app non firmate: "Ulteriori informazioni" -> "Esegui
+comunque").
 
-**Windows**: doppio clic su `Touché!Convert.exe`. Al primo avvio
-SmartScreen potrebbe avvisare che l'app non è firmata digitalmente
-(normale per eseguibili senza certificato a pagamento): scegli
-"Ulteriori informazioni" -> "Esegui comunque".
+**macOS**: estrai lo zip, sposta `Touché!Convert.app` dove preferisci,
+apri con **tasto destro -> Apri** la prima volta (Gatekeeper).
 
-**macOS**: estrai lo zip, sposta `Touché!Convert.app` dove preferisci
-(es. Applicazioni) e aprila con **tasto destro -> Apri** la prima
-volta (Gatekeeper blocca le app scaricate da internet non firmate con
-un account sviluppatore Apple a pagamento: aprendola così una volta,
-le volte successive si aprirà normalmente con doppio clic).
-
-**Linux**: rendi eseguibile il file scaricato e avvialo:
+**Linux**:
 ```
 chmod +x ToucheConvert
 ./ToucheConvert
 ```
 
-Una volta aperta, l'app mostra due schede: scegli quella che ti serve,
-seleziona il file di origine e la cartella di destinazione, premi
-"Converti".
+Scegli la scheda che ti serve, seleziona il file (o i file, per
+"Componi evento") e la cartella di destinazione, premi il pulsante di
+conversione.
 
-## Cosa è cambiato rispetto alla prima versione
-- Interfaccia ridisegnata (tema scuro, header con il logo FIE come
-  filigrana, icona dedicata) invece della semplice finestra grigia
-  di base
-- Aggiunta la conversione inversa XML → JSON
-- L'eseguibile ora si chiama **Touché!Convert** e usa il logo fornito
-  come icona dell'app su tutte le piattaforme
-- Build automatica per Windows, macOS e Linux invece del solo Windows
+## Uso da riga di comando (facoltativo)
+Ogni modulo funziona anche da solo, senza interfaccia grafica:
+```
+python3 touche2fie.py evento.json cartella_output
+python3 fie2touche.py risultati_fie.xml cartella_output
+python3 fisdotnet.py in ExpAllGara.XML cartella_output        # FisDotNet -> touche
+python3 fisdotnet.py out evento.json cartella_output          # touche -> FisDotNet
+python3 fisdotnet.py fie ExpAllGara.XML cartella_output       # FisDotNet -> FIE (tutte le gare)
+python3 fisdotnet.py componi cartella_output gara1.json gara2.json ...
+```
 
 ## Aggiornare il programma in futuro
-Ogni volta che modifichi i file `.py` e carichi le modifiche su
-GitHub (nuovo commit), i tre eseguibili vengono ricompilati
-automaticamente: non devi ripetere alcuna configurazione.
+Ogni commit su GitHub ricompila automaticamente i tre eseguibili:
+non serve ripetere alcuna configurazione.
 
 ## Sviluppo/compilazione in locale (facoltativo)
-Se preferisci compilare da solo invece di usare GitHub Actions
-(va comunque eseguito sul sistema operativo di destinazione: PyInstaller
-non fa compilazione incrociata fra sistemi diversi):
+PyInstaller compila solo per il sistema operativo su cui viene
+eseguito (nessuna compilazione incrociata):
 ```
 pip install -r requirements.txt
 
@@ -115,4 +138,3 @@ pyinstaller --noconfirm --windowed --name "Touché!Convert" --icon assets/icon.i
 # Linux
 pyinstaller --noconfirm --onefile --windowed --name "ToucheConvert" --add-data "assets:assets" gui.py
 ```
-L'eseguibile/app verrà creato nella cartella `dist/`.

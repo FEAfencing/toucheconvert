@@ -22,9 +22,10 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import touche2fie  # noqa: E402
 import fie2touche  # noqa: E402
+import fisdotnet  # noqa: E402
 
 APP_TITLE = "Touché!Convert"
-APP_SUBTITLE = "Convertitore touche-export ⇄ FIE XML"
+APP_SUBTITLE = "touche-export ⇄ FIE XML ⇄ FisDotNet XML"
 
 COLORE_SFONDO = "#0b1220"
 COLORE_PANNELLO = "#111a2e"
@@ -150,12 +151,140 @@ class SchedaConversione(ttk.Frame):
             self.after(0, lambda: self.btn_converti.configure(state="normal", text="Converti"))
 
 
+class SchedaComponiEvento(ttk.Frame):
+    """Scheda per comporre più export touche di singola gara in un unico
+    evento con più gare (selezione di più file JSON)."""
+
+    def __init__(self, parent, style_prefix):
+        super().__init__(parent, style=f"{style_prefix}.TFrame", padding=18)
+        self.output_dir = tk.StringVar()
+        self.percorsi = []
+
+        ttk.Label(
+            self, text="Componi più gare in un unico evento", style=f"{style_prefix}Titolo.TLabel"
+        ).pack(anchor="w", pady=(0, 2))
+        ttk.Label(
+            self,
+            text="Seleziona più file JSON touche-export di singola gara: verranno "
+                 "uniti in un unico evento con più gare (il circuito, se assente, "
+                 "userà il titolo dell'evento del primo file).",
+            style=f"{style_prefix}Sottotitolo.TLabel", wraplength=680, justify="left",
+        ).pack(anchor="w", pady=(0, 14))
+
+        blocco_lista = ttk.Frame(self, style=f"{style_prefix}.TFrame")
+        blocco_lista.pack(fill="both", expand=False, pady=6)
+        ttk.Label(blocco_lista, text="File selezionati:", style=f"{style_prefix}Etichetta.TLabel").pack(
+            anchor="w"
+        )
+        riga_lista = ttk.Frame(blocco_lista, style=f"{style_prefix}.TFrame")
+        riga_lista.pack(fill="x", pady=(4, 0))
+        self.lista = tk.Listbox(
+            riga_lista, height=6, bg="#0d1526", fg=COLORE_TESTO,
+            selectbackground=COLORE_ACCENTO, relief="flat", borderwidth=0,
+        )
+        self.lista.pack(side="left", fill="both", expand=True)
+        colonna_bottoni = ttk.Frame(riga_lista, style=f"{style_prefix}.TFrame")
+        colonna_bottoni.pack(side="left", padx=(8, 0), fill="y")
+        ttk.Button(colonna_bottoni, text="Aggiungi…", command=self._aggiungi_file).pack(fill="x", pady=(0, 4))
+        ttk.Button(colonna_bottoni, text="Rimuovi selezionato", command=self._rimuovi_selezionato).pack(
+            fill="x", pady=(0, 4)
+        )
+        ttk.Button(colonna_bottoni, text="Svuota lista", command=self._svuota_lista).pack(fill="x")
+
+        blocco_out = ttk.Frame(self, style=f"{style_prefix}.TFrame")
+        blocco_out.pack(fill="x", pady=6)
+        ttk.Label(blocco_out, text="Cartella di destinazione:", style=f"{style_prefix}Etichetta.TLabel").pack(
+            anchor="w"
+        )
+        riga_out = ttk.Frame(blocco_out, style=f"{style_prefix}.TFrame")
+        riga_out.pack(fill="x", pady=(4, 0))
+        ttk.Entry(riga_out, textvariable=self.output_dir).pack(side="left", fill="x", expand=True)
+        ttk.Button(riga_out, text="Sfoglia…", command=self._scegli_output).pack(side="left", padx=(8, 0))
+
+        self.btn_converti = ttk.Button(
+            self, text="Componi evento", style="Accento.TButton", command=self._avvia_composizione
+        )
+        self.btn_converti.pack(fill="x", pady=(16, 10), ipady=6)
+
+        ttk.Label(self, text="Registro attività:", style=f"{style_prefix}Etichetta.TLabel").pack(anchor="w")
+        self.log = scrolledtext.ScrolledText(
+            self, height=8, state="disabled", bg="#0d1526", fg=COLORE_TESTO,
+            insertbackground=COLORE_TESTO, relief="flat", borderwidth=0,
+        )
+        self.log.pack(fill="both", expand=True, pady=(4, 0))
+
+    def _aggiungi_file(self):
+        percorsi = filedialog.askopenfilenames(
+            title="Seleziona uno o più file JSON touche-export di singola gara",
+            filetypes=[("File JSON", "*.json"), ("Tutti i file", "*.*")],
+        )
+        for p in percorsi:
+            if p not in self.percorsi:
+                self.percorsi.append(p)
+                self.lista.insert("end", os.path.basename(p))
+                if not self.output_dir.get():
+                    self.output_dir.set(os.path.dirname(p))
+
+    def _rimuovi_selezionato(self):
+        sel = list(self.lista.curselection())
+        for i in reversed(sel):
+            self.lista.delete(i)
+            del self.percorsi[i]
+
+    def _svuota_lista(self):
+        self.lista.delete(0, "end")
+        self.percorsi = []
+
+    def _scegli_output(self):
+        cartella = filedialog.askdirectory(title="Seleziona la cartella di destinazione")
+        if cartella:
+            self.output_dir.set(cartella)
+
+    def _scrivi_log(self, testo):
+        self.log.configure(state="normal")
+        self.log.insert("end", testo + "\n")
+        self.log.see("end")
+        self.log.configure(state="disabled")
+
+    def _avvia_composizione(self):
+        if len(self.percorsi) < 2:
+            messagebox.showerror(APP_TITLE, "Seleziona almeno due file JSON da comporre.")
+            return
+        output_dir = self.output_dir.get().strip()
+        if not output_dir:
+            messagebox.showerror(APP_TITLE, "Seleziona una cartella di destinazione.")
+            return
+        self.btn_converti.configure(state="disabled", text="Composizione in corso…")
+        self._scrivi_log(f"Composizione di {len(self.percorsi)} file…")
+        threading.Thread(target=self._esegui, args=(list(self.percorsi), output_dir), daemon=True).start()
+
+    def _esegui(self, percorsi, output_dir):
+        try:
+            file_generati = fisdotnet.converti_componi_evento(percorsi, output_dir)
+            for f in file_generati:
+                self._scrivi_log(f"  → generato: {f}")
+            self._scrivi_log("Composizione completata con successo.")
+            self.after(
+                0,
+                lambda: messagebox.showinfo(
+                    APP_TITLE, f"Evento composto correttamente in:\n{output_dir}"
+                ),
+            )
+        except Exception as e:  # noqa: BLE001
+            dettaglio = traceback.format_exc()
+            self._scrivi_log("ERRORE: " + str(e))
+            self._scrivi_log(dettaglio)
+            self.after(0, lambda: messagebox.showerror(APP_TITLE, f"Errore durante la composizione:\n{e}"))
+        finally:
+            self.after(0, lambda: self.btn_converti.configure(state="normal", text="Componi evento"))
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("760x620")
-        self.minsize(640, 520)
+        self.geometry("980x680")
+        self.minsize(760, 560)
         self.configure(bg=COLORE_SFONDO)
 
         self._imposta_icona()
@@ -182,7 +311,7 @@ class App(tk.Tk):
         except tk.TclError:
             pass
 
-        for prefix in ("TabA", "TabB"):
+        for prefix in ("TabA", "TabB", "TabC", "TabD", "TabE", "TabF"):
             style.configure(f"{prefix}.TFrame", background=COLORE_PANNELLO)
             style.configure(
                 f"{prefix}Titolo.TLabel",
@@ -271,7 +400,8 @@ class App(tk.Tk):
             notebook,
             titolo="JSON touche-export  →  XML FIE",
             sottotitolo="Genera il file di pubblicazione risultati in formato FIE a partire "
-                        "dall'esportazione gestionale.",
+                        "dall'esportazione gestionale. Se il JSON è un evento con più gare, "
+                        "viene generato un file FIE per ciascuna gara.",
             estensioni_input=[("File JSON", "*.json"), ("Tutti i file", "*.*")],
             funzione_converti=touche2fie.converti,
             style_prefix="TabA",
@@ -285,9 +415,43 @@ class App(tk.Tk):
             funzione_converti=fie2touche.converti,
             style_prefix="TabB",
         )
+        scheda_fisdotnet_touche = SchedaConversione(
+            notebook,
+            titolo="XML FisDotNet  →  JSON touche-export",
+            sottotitolo="Converte un intero evento FisDotNet (anche con più gare/armi/generi) "
+                        "in un evento touche-export. Il torneo FisDotNet diventa il circuito; "
+                        "se assente si usa il titolo dell'evento. Gli incontri a squadre non "
+                        "vengono mai usati per ricostruire gli assalti individuali.",
+            estensioni_input=[("File XML FisDotNet", "*.xml *.XML"), ("Tutti i file", "*.*")],
+            funzione_converti=fisdotnet.converti_fisdotnet_a_touche,
+            style_prefix="TabC",
+        )
+        scheda_touche_fisdotnet = SchedaConversione(
+            notebook,
+            titolo="JSON touche-export  →  XML FisDotNet",
+            sottotitolo="Converte un evento touche-export (anche con più gare) in un file "
+                        "XML in formato FisDotNet.",
+            estensioni_input=[("File JSON", "*.json"), ("Tutti i file", "*.*")],
+            funzione_converti=fisdotnet.converti_touche_a_fisdotnet,
+            style_prefix="TabD",
+        )
+        scheda_fisdotnet_fie = SchedaConversione(
+            notebook,
+            titolo="XML FisDotNet  →  XML FIE (tutte le gare)",
+            sottotitolo="Scorciatoia: converte direttamente un evento FisDotNet in tanti "
+                        "file FIE quante sono le gare contenute nell'evento.",
+            estensioni_input=[("File XML FisDotNet", "*.xml *.XML"), ("Tutti i file", "*.*")],
+            funzione_converti=fisdotnet.converti_fisdotnet_a_fie,
+            style_prefix="TabE",
+        )
+        scheda_componi = SchedaComponiEvento(notebook, style_prefix="TabF")
 
-        notebook.add(scheda_json_xml, text="  JSON → XML  ")
-        notebook.add(scheda_xml_json, text="  XML → JSON  ")
+        notebook.add(scheda_json_xml, text="  JSON → FIE  ")
+        notebook.add(scheda_xml_json, text="  FIE → JSON  ")
+        notebook.add(scheda_fisdotnet_touche, text="  FisDotNet → JSON  ")
+        notebook.add(scheda_touche_fisdotnet, text="  JSON → FisDotNet  ")
+        notebook.add(scheda_fisdotnet_fie, text="  FisDotNet → FIE  ")
+        notebook.add(scheda_componi, text="  Componi evento  ")
 
 
 if __name__ == "__main__":
